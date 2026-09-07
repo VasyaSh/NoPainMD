@@ -1,0 +1,50 @@
+{
+  "name": "nopainmd",
+  "version": "0.1.13",
+  "description": "A local Markdown browser with a directory tree, Mermaid, themes, and printing.",
+  "author": "Vasil Shpilchin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VasyaSh/NoPainMD.git"
+  },
+  "homepage": "https://github.com/VasyaSh/NoPainMD#readme",
+  "bugs": {
+    "url": "https://github.com/VasyaSh/NoPainMD/issues"
+  },
+  "type": "module",
+  "bin": {
+    "nopainmd": "bin/nopainmd.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT",
+  "files": [
+    "bin",
+    "src",
+    "public",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "scripts": {
+    "start": "node bin/nopainmd.js",
+    "build": "node scripts/build.js",
+    "prepack": "npm run build",
+    "test": "node --test test/*.test.js",
+    "test:browser": "playwright test",
+    "test:package": "node scripts/test-package.js",
+    "test:all": "npm test && npm run test:browser"
+  },
+  "dependencies": {
+    "markdown-it": "^15.0.1",
+    "markdown-it-task-lists": "^2.1.1",
+    "open": "^11.0.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "dompurify": "3.4.15",
+    "mermaid": "^11.17.2",
+    "sharp": "^0.35.4"
+  }
+}

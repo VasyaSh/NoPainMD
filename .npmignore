@@ -1,0 +1,10 @@
+node_modules/
+test/
+test-results/
+playwright-report/
+playwright.config.js
+*.tgz
+.env
+.env.*
+!.env.example
+AGENTS.md

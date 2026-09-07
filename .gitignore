@@ -1,0 +1,7 @@
+node_modules/
+public/vendor/
+test-results/
+playwright-report/
+*.tgz
+.env
+AGENTS.md

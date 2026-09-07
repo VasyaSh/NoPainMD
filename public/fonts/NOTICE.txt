@@ -1,0 +1,13 @@
+Open Sans by Steve Matteson, Ascender Corporation.
+Copyright 2010-2011, Google Corporation.
+
+These unmodified historical TrueType files and their Apache License 2.0
+were obtained together from google/fonts at commit:
+beaec0837bd21524b57ecb435158f9011fc03999
+
+Source:
+https://github.com/google/fonts/tree/beaec0837bd21524b57ecb435158f9011fc03999/apache/opensans
+
+Files: OpenSans-Regular.ttf, OpenSans-Bold.ttf, OpenSans-Italic.ttf,
+OpenSans-BoldItalic.ttf. See LICENSE.txt for the license supplied with them.
+Later Open Sans releases have different licensing and are not substituted here.
