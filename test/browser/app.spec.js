@@ -584,20 +584,54 @@ test('external navigation stays capped and pinned through search, Reload, timeou
   expect(Math.abs(message.y + message.height / 2 - content.y - content.height / 2)).toBeLessThan(2);
 });
 
-test('unavailable storage does not prevent theme switching or resizing', async ({ page }) => {
+test('initial theme uses the browser preference before viewer startup unless a valid choice is saved', async ({ page }) => {
+  await page.route('**/app.js', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: `window.themeBeforeViewer = document.documentElement.dataset.theme;\n${await response.text()}` });
+  });
+  await open(page);
+  for (const [colorScheme, saved, expected] of [
+    ['dark', null, 'dark'], ['light', null, 'light'],
+    ['dark', 'light', 'light'], ['light', 'dark', 'dark'],
+    ['dark', 'invalid', 'dark'],
+  ]) {
+    await page.emulateMedia({ colorScheme });
+    await page.evaluate(saved => {
+      if (saved === null) localStorage.removeItem('nopainmd.theme');
+      else localStorage.setItem('nopainmd.theme', saved);
+    }, saved);
+    await page.reload();
+    await expect(page.locator('#reload')).toBeEnabled();
+    expect(await page.evaluate(() => window.themeBeforeViewer)).toBe(expected);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', expected);
+    await expect(page.locator('#theme')).toHaveAttribute('aria-checked', String(expected === 'dark'));
+    expect(await page.evaluate(() => localStorage.getItem('nopainmd.theme'))).toBe(saved);
+  }
+  await page.addInitScript(() => { window.matchMedia = undefined; });
+  await page.evaluate(() => localStorage.removeItem('nopainmd.theme'));
+  await page.reload();
+  await expect(page.locator('#reload')).toBeEnabled();
+  expect(await page.evaluate(() => window.themeBeforeViewer)).toBe('light');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+});
+
+test('unavailable storage uses the browser theme and still permits switching and resizing', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
   await page.addInitScript(() => {
     Storage.prototype.getItem = () => { throw new Error('Storage unavailable'); };
     Storage.prototype.setItem = () => { throw new Error('Storage unavailable'); };
   });
   await open(page, docFile);
-  await page.locator('#theme').click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.locator('#theme').click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.locator('#divider').focus(); await page.keyboard.press('ArrowRight');
   expect(Math.round((await page.locator('#sidebar').boundingBox()).width)).toBe(310);
   await page.locator('#html-toggle').click(); await expect(page.locator('#reload')).toBeEnabled();
   await expect(page.locator('#html-toggle')).toHaveAttribute('aria-checked', 'false');
   await reload(page);
   await expect(page.locator('#html-toggle')).toHaveAttribute('aria-checked', 'false');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 });
 
 test('HTML, theme, and width preferences persist within bounds; HTML toggles preserve state and override live defaults', async ({ page }) => {
@@ -908,6 +942,7 @@ test('Mermaid renders locally, follows themes, handles invalid source, and print
 });
 
 test('imported viewers isolate their UI, support custom data and history, and clean up pending work', async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
   const file = path.join(root, 'embedded.md');
   await writeFile(path.join(root, 'picture.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18"/></svg>');
   await writeFile(file, '# Embedded\n## Links\n[Plain](plain.md)\n<kbd>HTML</kbd>\n![picture](picture.svg)\n```mermaid\nflowchart LR\n A-->B\n```');
@@ -919,8 +954,11 @@ test('imported viewers isolate their UI, support custom data and history, and cl
     const { mountNoPainMD, createHTTPSource } = await import('/viewer.js');
     const unchanged = before === document.documentElement.outerHTML;
     const source = createHTTPSource({ baseURL: `${base}/api/` });
+    localStorage.setItem('nopainmd.theme', 'light');
+    localStorage.setItem('first.theme', 'light');
+    localStorage.setItem('second.theme', 'light');
     const one = mountNoPainMD(document.querySelector('#one'), { file, source, storageKey: 'first', onNavigate: (file, hash) => { window.lastNavigation = { file, hash }; } });
-    const two = mountNoPainMD(document.querySelector('#two'), { file, source, storageKey: false, theme: 'dark' });
+    const two = mountNoPainMD(document.querySelector('#two'), { file, source, storageKey: 'second', theme: 'dark' });
     window.embedded = { one, two, mountNoPainMD, source };
     await Promise.all([one.ready, two.ready]);
     return { unchanged, fonts: document.fonts.check('16px "Open Sans"') };
@@ -983,15 +1021,16 @@ test('imported viewers isolate their UI, support custom data and history, and cl
     two.destroy();
     const fontsReleased = [...document.fonts].filter(face => face.family === 'Open Sans').length === 0;
     const early = mountNoPainMD(container, { source, storageKey: false });
+    const browserTheme = early.element.dataset.theme;
     await early.open(window.lastNavigation.file);
     const indexedAfterEarlyOpen = early.element.querySelectorAll('.file-row').length;
     early.destroy();
-    const historyViewer = mountNoPainMD(container, { source, history: true, updateTitle: true, storageKey: false });
+    const historyViewer = mountNoPainMD(container, { source, history: true, updateTitle: true, storageKey: false, theme: 'light' });
     await historyViewer.ready;
     window.embedded.historyViewer = historyViewer;
-    return { empty, aborted, fontsReleased, indexedAfterEarlyOpen };
+    return { empty, aborted, fontsReleased, indexedAfterEarlyOpen, browserTheme, explicitTheme: historyViewer.element.dataset.theme };
   });
-  expect(teardown).toEqual({ empty: true, aborted: true, fontsReleased: true, indexedAfterEarlyOpen: 2 });
+  expect(teardown).toEqual({ empty: true, aborted: true, fontsReleased: true, indexedAfterEarlyOpen: 2, browserTheme: 'dark', explicitTheme: 'light' });
   await page.evaluate(file => window.embedded.historyViewer.open(file, '#links'), file);
   await expect(page).toHaveTitle('Embedded');
   expect(new URL(page.url()).searchParams.get('section')).toBe('docs');

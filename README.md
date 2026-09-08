@@ -20,7 +20,8 @@ Requires Node.js 22 or newer. Run it locally, or bundle with your application!
 Find `.md` and `.markdown` files in a searchable directory tree, jump to headings,
 and follow links between documents.
 View Mermaid diagrams and embedded SVG, toggle HTML rendering, and read comfortably
-with light or dark themes and a resizable sidebar.
+with a resizable sidebar and light or dark themes, initially chosen from your saved
+setting or browser preference.
 Refresh files without losing your place, and print documents without the
 surrounding navigation or controls.
 
@@ -42,7 +43,7 @@ git clone https://github.com/VasyaSh/NoPainMD.git
 cd NoPainMD
 npm ci
 npm pack
-npm install -g ./nopainmd-0.1.14.tgz
+npm install -g ./nopainmd-0.1.15.tgz
 ```
 
 `npm pack` builds and bundles the browser assets automatically. If the version
@@ -142,6 +143,7 @@ and `fonts` directory together; `assetBaseURL` then defaults to that directory.
 | Container | Width and height are controlled by the host application. |
 | Isolation | Shadow DOM isolates styles; multiple viewer instances are supported. |
 | Included controls | Theme, HTML, navigation, search, sidebar resizing, and document-only printing. |
+| `theme` | Set `'light'` or `'dark'` to override the saved theme and bypass browser detection; omitted uses the saved choice, then the browser's preferred color scheme at startup, falling back to light. |
 | `history` | Defaults to `false`; `true` enables document URLs and Back/Forward navigation. |
 | `updateTitle` | Defaults to `false`; `true` lets the viewer update the browser tab title. |
 | `onNavigate(file, hash)` | Navigation callback for integration with a host router. |

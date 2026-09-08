@@ -28,6 +28,7 @@ export interface ViewerOptions {
   updateTitle?: boolean;
   /** Set false to disable persistence; use different keys for independent instances. */
   storageKey?: string | false;
+  /** Initial override; defaults to the saved choice, then the browser preference. */
   theme?: Theme;
   htmlEnabled?: boolean;
   onNavigate?(file: string, hash: string): void;
