@@ -4,6 +4,7 @@
 ![Node.js ≥22](https://img.shields.io/badge/Node.js-%3E%3D22-339933)
 ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-3178C6)
 ![Types: included](https://img.shields.io/badge/types-included-3178C6)
+[![Node function coverage: 100%](https://img.shields.io/badge/Node_function_coverage-100%25-brightgreen)](https://github.com/VasyaSh/NoPainMD/actions/workflows/node.js.yml)
 
 Developers are working with more Markdown than ever. AI tools and agents often
 take their instructions from `.md` files, and many use terminal interfaces,
