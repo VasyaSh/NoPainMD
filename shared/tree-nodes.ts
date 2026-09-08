@@ -1,8 +1,9 @@
+import type { TreeNode } from './types.js';
 // Budget files with their ancestors; exclude empty branches.
-export function capTreeNodes(candidates, root, maxNodes) {
-  const available = new Map();
+export function capTreeNodes(candidates: Iterable<TreeNode>, root: string, maxNodes: number): { nodes: Map<string, TreeNode>; limited: boolean } {
+  const available = new Map<string, TreeNode>();
   for (const node of candidates) if (!available.has(node.path)) available.set(node.path, node);
-  const nodes = new Map();
+  const nodes = new Map<string, TreeNode>();
   let limited = false;
   for (const file of available.values()) {
     if (file.type !== 'file' || nodes.has(file.path)) continue;

@@ -2,11 +2,13 @@ import { test, expect } from '@playwright/test';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { createApp } from '../../src/server.js';
+import { createApp } from '../../dist/src/server.js';
 
-let temp, root, external, app, base, docFile, logs;
+let temp, root, external, app, base, docFile, logs, pageErrors;
 const longText = '\n\nParagraph with enough content to scroll.\n'.repeat(100);
-test.beforeEach(async () => {
+test.beforeEach(async ({ page }) => {
+  pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
   temp = await mkdtemp(path.join(os.tmpdir(), 'nopainmd-browser-'));
   root = path.join(temp, 'base'); external = path.join(temp, 'outside');
   await mkdir(path.join(root, 'docs', 'nested'), { recursive: true }); await mkdir(external);
@@ -21,7 +23,11 @@ test.beforeEach(async () => {
   await new Promise((resolve, reject) => app.server.once('error', reject).listen(0, '127.0.0.1', resolve));
   base = `http://127.0.0.1:${app.server.address().port}`;
 });
-test.afterEach(async () => { await app.stop(); await rm(temp, { recursive: true, force: true }); });
+test.afterEach(async () => {
+  await app?.stop();
+  if (temp) await rm(temp, { recursive: true, force: true });
+  expect(pageErrors ?? []).toEqual([]);
+});
 const open = async (page, file) => {
   await page.goto(`${base}/${file ? `?${new URLSearchParams({ file })}` : ''}`);
   await expect(page.locator('#reload')).toBeEnabled();
@@ -595,11 +601,14 @@ test('unavailable storage does not prevent theme switching or resizing', async (
 });
 
 test('HTML, theme, and width preferences persist within bounds; HTML toggles preserve state and override live defaults', async ({ page }) => {
-  await writeFile(docFile, '# Guide\n## Start\nUse <kbd>Ctrl</kbd> and H<sub>2</sub>O.' + longText + '\n## End');
+  await writeFile(path.join(root, 'docs', 'picture.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18"/></svg>');
+  await writeFile(docFile, '# Guide\n## Start\nUse <kbd>Ctrl</kbd> and H<sub>2</sub>O.\n\n<img src="picture.svg" alt="HTML image">\n\n![Markdown image](picture.svg)\n\n<!-- ![hidden](picture.svg) -->\n\n```mermaid\nflowchart LR\n A --> B\n```' + longText + '\n## End');
   await open(page, docFile);
   const toggle = page.getByRole('switch', { name: 'HTML', exact: true });
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#content kbd')).toHaveText('Ctrl');
+  await expect(page.locator('#content img')).toHaveCount(2);
+  await expect(page.locator('.mermaid-screen svg')).toHaveCount(1);
   expect(await page.locator('.html-indicator').evaluate(el => getComputedStyle(el).fill)).toBe('rgb(39, 148, 73)');
   expect(await page.evaluate(() => localStorage.getItem('nopainmd.html'))).toBeNull();
   await page.locator('.folder-row').filter({ hasText: 'nested' }).click();
@@ -612,6 +621,11 @@ test('HTML, theme, and width preferences persist within bounds; HTML toggles pre
   expect(await page.locator('.html-indicator').evaluate(el => getComputedStyle(el).fill)).toBe('rgb(195, 66, 66)');
   await expect(page.locator('#content kbd')).toHaveCount(0);
   await expect(page.locator('#content')).toContainText('<kbd>Ctrl</kbd>');
+  await expect(page.locator('#content img')).toHaveCount(1);
+  await expect(page.getByAltText('Markdown image')).toHaveJSProperty('naturalWidth', 40);
+  await expect(page.locator('#content')).toContainText('<img src="picture.svg" alt="HTML image">');
+  await expect(page.locator('#content')).toContainText('<!-- ![hidden](picture.svg) -->');
+  await expect(page.locator('.mermaid-screen svg')).toHaveCount(1);
   expect(await page.locator('#document-panel').evaluate(el => el.scrollTop)).toBe(650);
   await expect(page.locator('.selected')).toHaveText('guide & #.md');
   await expect(page.locator('.folder-row').filter({ hasText: 'nested' })).toHaveAttribute('aria-expanded', 'true');
@@ -619,6 +633,7 @@ test('HTML, theme, and width preferences persist within bounds; HTML toggles pre
   expect(documentRequests).toBe(0);
   await toggle.click(); await expect(toggle).toBeEnabled();
   await expect(page.locator('#content kbd')).toHaveText('Ctrl');
+  await expect(page.locator('#content img')).toHaveCount(2);
   expect(await page.locator('#document-panel').evaluate(el => el.scrollTop)).toBe(650);
   expect(documentRequests).toBe(0);
   await toggle.click(); await expect(toggle).toBeEnabled();
@@ -630,6 +645,9 @@ test('HTML, theme, and width preferences persist within bounds; HTML toggles pre
   await page.locator('#divider').focus(); await page.keyboard.press('End');
   expect(await page.evaluate(() => localStorage.getItem('nopainmd.sidebarWidth'))).toBe('1000');
   await page.reload(); await expect(toggle).toBeEnabled();
+  await expect(page.locator('#content img')).toHaveCount(1);
+  await expect(page.getByAltText('Markdown image')).toHaveJSProperty('naturalWidth', 40);
+  await expect(page.locator('.mermaid-screen svg')).toHaveCount(1);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   expect(Math.round((await page.locator('#sidebar').boundingBox()).width)).toBe(1000);
   await page.locator('#divider').focus(); await page.keyboard.press('Home'); await page.keyboard.press('ArrowLeft');
@@ -887,4 +905,97 @@ test('Mermaid renders locally, follows themes, handles invalid source, and print
   await page.pdf({ path: testInfo.outputPath('document.pdf'), format: 'A4', printBackground: true });
   expect(await page.evaluate(() => localStorage.getItem('nopainmd.theme'))).toBe('dark');
   expect(remote).toEqual([]);
+});
+
+test('imported viewers isolate their UI, support custom data and history, and clean up pending work', async ({ page }, testInfo) => {
+  const file = path.join(root, 'embedded.md');
+  await writeFile(path.join(root, 'picture.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="18"/></svg>');
+  await writeFile(file, '# Embedded\n## Links\n[Plain](plain.md)\n<kbd>HTML</kbd>\n![picture](picture.svg)\n```mermaid\nflowchart LR\n A-->B\n```');
+  const errors = []; page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/host?*', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Host application</title><style>body{margin:20px}button{color:rgb(190,0,0)}article{display:none}.slot{height:550px;width:650px;display:inline-block}</style><button id="host-button">Host action</button><div id="one" class="slot"></div><div id="two" class="slot"></div>' }));
+  await page.goto(`${base}/host?section=docs`);
+  const initial = await page.evaluate(async ({ file, base }) => {
+    const before = document.documentElement.outerHTML;
+    const { mountNoPainMD, createHTTPSource } = await import('/viewer.js');
+    const unchanged = before === document.documentElement.outerHTML;
+    const source = createHTTPSource({ baseURL: `${base}/api/` });
+    const one = mountNoPainMD(document.querySelector('#one'), { file, source, storageKey: 'first', onNavigate: (file, hash) => { window.lastNavigation = { file, hash }; } });
+    const two = mountNoPainMD(document.querySelector('#two'), { file, source, storageKey: false, theme: 'dark' });
+    window.embedded = { one, two, mountNoPainMD, source };
+    await Promise.all([one.ready, two.ready]);
+    return { unchanged, fonts: document.fonts.check('16px "Open Sans"') };
+  }, { file, base });
+  expect(initial).toEqual({ unchanged: true, fonts: true });
+  const one = page.locator('#one'); const two = page.locator('#two');
+  await expect(one.locator('#content')).toBeVisible();
+  expect(await one.locator('#content img').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+  await expect(one.locator('.mermaid-screen svg')).toHaveCount(1);
+  await expect(two.locator('.mermaid-screen svg')).toHaveCount(1);
+  expect(await one.locator('.mermaid-screen svg').getAttribute('id')).not.toBe(await two.locator('.mermaid-screen svg').getAttribute('id'));
+  await expect(one.locator('#sidebar')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(two.locator('#sidebar')).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+  await expect(page.locator('#host-button')).toHaveCSS('color', 'rgb(190, 0, 0)');
+  await expect(one.locator('#print')).toHaveCSS('position', 'fixed');
+  const bounds = await one.boundingBox(); const print = await one.locator('#print').boundingBox();
+  expect(print.x).toBeGreaterThan(bounds.x); expect(print.x + print.width).toBeLessThan(bounds.x + bounds.width);
+  await page.evaluate(() => {
+    const append = document.body.append;
+    document.body.append = function (...nodes) {
+      append.apply(this, nodes);
+      for (const frame of nodes.filter(node => node instanceof HTMLIFrameElement)) {
+        frame.contentWindow.print = () => {
+          window.printed = { text: frame.contentDocument.body.textContent, sidebar: !!frame.contentDocument.querySelector('#sidebar'), diagrams: frame.contentDocument.querySelectorAll('.mermaid-print svg').length };
+          frame.contentWindow.dispatchEvent(new Event('afterprint'));
+          document.body.append = append;
+        };
+      }
+    };
+  });
+  await one.locator('#print').click();
+  await expect.poll(() => page.evaluate(() => window.printed?.diagrams)).toBe(1);
+  const printed = await page.evaluate(() => window.printed);
+  expect(printed.sidebar).toBe(false);
+  expect(printed.text).toContain('Embedded'); expect(printed.text).not.toContain('Host action');
+  await expect(page.locator('iframe')).toHaveCount(0);
+  await one.locator('#html-toggle').click();
+  await expect(one.locator('#content kbd')).toHaveCount(0);
+  await expect(two.locator('#content kbd')).toHaveCount(1);
+  await one.locator('#quick-search').fill('embedded');
+  await one.locator('#content').getByRole('link', { name: 'Plain', exact: true }).click();
+  await expect(one.locator('#content')).toHaveText('A plain document.');
+  await expect(two.locator('#content h1')).toHaveText('Embedded');
+  expect(await page.evaluate(() => window.lastNavigation.file)).toBe(path.join(root, 'plain.md'));
+  expect(page.url()).toBe(`${base}/host?section=docs`);
+  await expect(page).toHaveTitle('Host application');
+  await page.evaluate(async () => {
+    const { one, two } = window.embedded;
+    await Promise.all([one.setTheme('dark'), two.setTheme('light')]);
+  });
+  await page.screenshot({ path: testInfo.outputPath('embedded.png') });
+  const teardown = await page.evaluate(async () => {
+    const { one, two, mountNoPainMD, source } = window.embedded;
+    const container = document.querySelector('#one');
+    one.destroy(); one.destroy();
+    const empty = container.childElementCount === 0;
+    let aborted = false;
+    const pending = mountNoPainMD(container, { source: { ...source, getConfig: signal => new Promise((_, reject) => signal.addEventListener('abort', () => { aborted = true; reject(new DOMException('Aborted', 'AbortError')); })) } });
+    pending.destroy(); await pending.ready;
+    two.destroy();
+    const fontsReleased = [...document.fonts].filter(face => face.family === 'Open Sans').length === 0;
+    const early = mountNoPainMD(container, { source, storageKey: false });
+    await early.open(window.lastNavigation.file);
+    const indexedAfterEarlyOpen = early.element.querySelectorAll('.file-row').length;
+    early.destroy();
+    const historyViewer = mountNoPainMD(container, { source, history: true, updateTitle: true, storageKey: false });
+    await historyViewer.ready;
+    window.embedded.historyViewer = historyViewer;
+    return { empty, aborted, fontsReleased, indexedAfterEarlyOpen };
+  });
+  expect(teardown).toEqual({ empty: true, aborted: true, fontsReleased: true, indexedAfterEarlyOpen: 2 });
+  await page.evaluate(file => window.embedded.historyViewer.open(file, '#links'), file);
+  await expect(page).toHaveTitle('Embedded');
+  expect(new URL(page.url()).searchParams.get('section')).toBe('docs');
+  expect(new URL(page.url()).searchParams.get('file')).toBe(file);
+  await page.evaluate(() => window.embedded.historyViewer.destroy());
+  expect(errors).toEqual([]);
 });

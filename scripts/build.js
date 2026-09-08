@@ -1,18 +1,30 @@
-import { cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, rm, chmod, readdir } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const source = path.join(root, 'node_modules/mermaid/dist');
-const target = path.join(root, 'public/vendor/mermaid');
+const target = path.join(root, 'dist');
 await rm(target, { recursive: true, force: true });
-await mkdir(path.join(target, 'chunks'), { recursive: true });
-// Ship the minified entry and lazy chunks.
-await cp(path.join(source, 'mermaid.esm.min.mjs'), path.join(target, 'mermaid.esm.min.mjs'));
-await cp(path.join(source, 'chunks/mermaid.esm.min'), path.join(target, 'chunks/mermaid.esm.min'), { recursive: true, filter: file => !file.endsWith('.map') });
-await cp(path.join(root, 'node_modules/mermaid/LICENSE'), path.join(target, 'LICENSE'));
-const sanitizer = path.join(root, 'public/vendor/dompurify');
-await mkdir(sanitizer, { recursive: true });
-await cp(path.join(root, 'node_modules/dompurify/dist/purify.min.js'), path.join(sanitizer, 'purify.min.js'));
-await cp(path.join(root, 'node_modules/dompurify/LICENSE'), path.join(sanitizer, 'LICENSE'));
-console.log('Bundled Mermaid and DOMPurify browser modules.');
+execFileSync(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc')], { cwd: root, stdio: 'inherit' });
+await cp(path.join(root, 'public'), path.join(target, 'public'), { recursive: true, filter: file => !file.includes(`${path.sep}vendor`) });
+await build({
+  absWorkingDir: root,
+  entryPoints: ['client/app.ts', 'client/viewer.ts', 'client/document.ts'],
+  outdir: 'dist/public', bundle: true, splitting: true, format: 'esm', platform: 'browser',
+  target: 'es2022', loader: { '.html': 'text', '.css': 'text' },
+  chunkNames: '[name]-[hash]', assetNames: 'assets/[name]-[hash]',
+  minify: true, legalComments: 'linked',
+});
+await build({ absWorkingDir: root, entryPoints: ['client/preferences.ts'], outfile: 'dist/public/preferences.js', bundle: true, format: 'iife', target: 'es2022', minify: true });
+for (const file of await readdir(path.join(target, 'client'))) {
+  if (file.endsWith('.js')) await rm(path.join(target, 'client', file));
+}
+for (const dependency of ['mermaid', 'dompurify']) {
+  const directory = path.join(target, 'public/vendor', dependency);
+  await mkdir(directory, { recursive: true });
+  await cp(path.join(root, 'node_modules', dependency, 'LICENSE'), path.join(directory, 'LICENSE'));
+}
+await chmod(path.join(target, 'bin/nopainmd.js'), 0o755);
+console.log('Built TypeScript, declarations, and browser bundles.');

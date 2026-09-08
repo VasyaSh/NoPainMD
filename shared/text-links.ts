@@ -1,14 +1,17 @@
+export interface TextLink { index: number; text: string; href?: string }
+
 // The caller checks index membership.
-export function textLinks(text) {
-  const matches = [];
+export function textLinks(text: string): TextLink[] {
+  const matches: TextLink[] = [];
   for (const chunk of text.matchAll(/[^\s<>"'`]+/gu)) {
     let value = chunk[0];
     let index = chunk.index;
     while (/^[([{]/u.test(value)) { value = value.slice(1); index++; }
     // Exclude punctuation and unmatched closing brackets.
     while (value) {
-      const last = value.at(-1);
-      const opening = { ')': '(', ']': '[', '}': '{' }[last];
+      const last = value.at(-1) ?? '';
+      const pairs: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+      const opening = pairs[last];
       if (/[.,;!?]/u.test(last) || (opening && value.split(last).length > value.split(opening).length)) value = value.slice(0, -1);
       else break;
     }

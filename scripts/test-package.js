@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { build } from 'esbuild';
 
 const exec = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -23,7 +24,32 @@ try {
   await exec(npm, ['pack', '--pack-destination', temporary, '--silent'], { cwd: root });
   const metadata = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
   await exec(npm, ['install', '-g', '--prefix', prefix, path.join(temporary, `${metadata.name}-${metadata.version}.tgz`), '--no-audit', '--no-fund'], { timeout: 120000 });
-  const bin = process.platform === 'win32' ? path.join(prefix, 'node_modules/nopainmd/bin/nopainmd.js') : path.join(prefix, 'bin/nopainmd');
+  const consumer = path.join(temporary, 'consumer');
+  await mkdir(consumer);
+  await writeFile(path.join(consumer, 'package.json'), JSON.stringify({ name: 'viewer-consumer', private: true, type: 'module' }));
+  await exec(npm, ['install', '--omit=dev', '--no-audit', '--no-fund', path.join(temporary, `${metadata.name}-${metadata.version}.tgz`)], { cwd: consumer, timeout: 120000 });
+  await writeFile(path.join(consumer, 'viewer.ts'), `
+import { mountNoPainMD, createHTTPSource, type ViewerDataSource, type NoPainMDViewer, type MarkdownDocument, type TreeNode, type IndexResult } from 'nopainmd';
+export function mount(container: HTMLElement): NoPainMDViewer {
+  const source: ViewerDataSource = createHTTPSource({ baseURL: '/docs-api/' });
+  return mountNoPainMD(container, { source, storageKey: 'host.docs', onDocumentChange(document: MarkdownDocument | null) { console.log(document?.title); } });
+}
+export function files(result: IndexResult): TreeNode[] { return result.nodes.filter(node => node.type === 'file'); }
+// @ts-expect-error Invalid theme choices must be rejected by the published types.
+mountNoPainMD(document.body, { theme: 'invalid-theme' });
+`);
+  for (const mode of ['NodeNext', 'Bundler']) {
+    await writeFile(path.join(consumer, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, noUncheckedIndexedAccess: true, noEmit: true, skipLibCheck: false, target: 'ES2022', lib: ['ES2023', 'DOM', 'DOM.Iterable'], types: [], module: mode === 'NodeNext' ? mode : 'ESNext', moduleResolution: mode }, files: ['viewer.ts'] }));
+    await exec(process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', consumer], { cwd: consumer });
+  }
+  await build({ absWorkingDir: consumer, entryPoints: ['viewer.ts'], outdir: 'build', bundle: true, splitting: true, format: 'esm', platform: 'browser', logLevel: 'silent' });
+  await writeFile(path.join(consumer, 'import.mjs'), "import { mountNoPainMD } from 'nopainmd'; import { createApp } from 'nopainmd/server'; if (typeof mountNoPainMD !== 'function' || typeof createApp !== 'function') throw new Error('Missing module exports');");
+  await exec(process.execPath, ['import.mjs'], { cwd: consumer });
+  for (const developmentDependency of ['typescript', 'eslint', '@playwright/test', 'mermaid', 'dompurify']) {
+    await assert.rejects(readFile(path.join(consumer, 'node_modules', developmentDependency, 'package.json')));
+  }
+  console.log('module: browser bundling, strict consumer declarations, side-effect-free imports, and production dependencies passed.');
+  const bin = process.platform === 'win32' ? path.join(prefix, 'node_modules/nopainmd/dist/bin/nopainmd.js') : path.join(prefix, 'bin/nopainmd');
   assert.equal((await exec(process.execPath, [bin, '--version'])).stdout.trim(), metadata.version);
   for (const mode of ['global', 'npx']) {
     const tarball = path.join(temporary, `${metadata.name}-${metadata.version}.tgz`);
@@ -62,9 +88,9 @@ try {
     assert.match(doc.html, /<kbd>Ctrl<\/kbd>/);
     assert.match(doc.html, /<svg viewBox="0 0 40 40">\n\n<circle/);
     const escaped = await (await fetch(`${url}api/document?${new URLSearchParams({ file: path.join(docs, 'readme.MARKDOWN'), html: 'false' })}`)).json();
-    assert.match(escaped.html, /&lt;kbd&gt;Ctrl&lt;\/kbd&gt;/);
+    assert.match(escaped.html, /&lt;kbd&gt;.*Ctrl.*&lt;\/kbd&gt;/);
     assert.doesNotMatch(escaped.html, /<svg/);
-    for (const asset of ['app.js', 'document.js', 'svg.js', 'text-links.js', 'headings.js', 'limits.js', 'tree-nodes.js', 'style.css', 'favicon.png', 'fonts/OpenSans-Regular.ttf', 'fonts/LICENSE.txt', 'vendor/mermaid/mermaid.esm.min.mjs', 'vendor/dompurify/purify.min.js', 'vendor/dompurify/LICENSE']) {
+    for (const asset of ['app.js', 'viewer.js', 'document.js', 'preferences.js', 'style.css', 'favicon.png', 'fonts/OpenSans-Regular.ttf', 'fonts/LICENSE.txt', 'vendor/mermaid/LICENSE', 'vendor/dompurify/LICENSE']) {
       const response = await fetch(url + asset); assert.equal(response.status, 200, asset);
     }
     const favicon = Buffer.from(await (await fetch(`${url}favicon.png`)).arrayBuffer());

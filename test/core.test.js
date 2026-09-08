@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createConfig } from '../src/config.js';
-import { indexDirectory } from '../src/indexer.js';
-import { renderMarkdown } from '../src/markdown.js';
-import { within, fileURL, regularFile } from '../src/paths.js';
-import { createApp } from '../src/server.js';
-import { capTreeNodes } from '../public/tree-nodes.js';
-import { fileNodes } from '../src/paths.js';
+import { get } from 'node:http';
+import { createConfig } from '../dist/src/config.js';
+import { indexDirectory } from '../dist/src/indexer.js';
+import { renderMarkdown } from '../dist/src/markdown.js';
+import { within, fileURL, regularFile } from '../dist/src/paths.js';
+import { createApp } from '../dist/src/server.js';
+import { capTreeNodes } from '../dist/shared/tree-nodes.js';
+import { fileNodes } from '../dist/src/paths.js';
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'nopainmd-test-'));
@@ -66,9 +67,9 @@ test('document HTML option uses the environment default and permits a per-browse
   assert.ok(Object.values(enabled.markers).some(marker => marker.kind === 'heading'));
   const cached = await (await fetch(`${url}&variants=true`)).json();
   assert.equal(cached.htmlEnabled, true);
-  assert.match(cached.alternate.html, /&lt;kbd&gt;Ctrl&lt;\/kbd&gt;/);
+  assert.match(cached.alternate.html, /&lt;kbd&gt;.*Ctrl.*&lt;\/kbd&gt;/);
   await writeFile(path.join(root, '.env'), 'NOPAINMD_HTML_ENABLED=false');
-  assert.match((await (await fetch(url)).json()).html, /&lt;kbd&gt;Ctrl&lt;\/kbd&gt;/);
+  assert.match((await (await fetch(url)).json()).html, /&lt;kbd&gt;.*Ctrl.*&lt;\/kbd&gt;/);
   assert.match((await (await fetch(`${url}&html=true`)).json()).html, /<kbd>Ctrl<\/kbd>/);
   assert.equal((await fetch(`${url}&html=invalid`)).status, 400);
 });
@@ -81,6 +82,10 @@ test('heading extraction uses parsed headings, correct title, duplicate anchors,
   assert.equal(renderMarkdown('No headings', '/tmp/plain.md').title, 'plain.md');
   assert.equal(renderMarkdown('Setext\n====', '/tmp/plain.md').title, 'Setext');
   assert.equal(renderMarkdown('# One\n# Two', '/tmp/plain.md').headings.length, 2);
+  const empty = renderMarkdown('# !!!\n# ???\n## !!!', '/tmp/plain.md');
+  assert.deepEqual(empty.headings.map(h => h.id), ['section', 'section-1', 'section-2']);
+  const formatted = renderMarkdown('# ![Picture](pic.png) `code`<br>title', '/tmp/plain.md', '', { htmlEnabled: true });
+  assert.equal(formatted.title, 'Picture code title');
 });
 
 test('Markdown supports extras, literal Mermaid source, SVG markup, and safe links/images', () => {
@@ -89,6 +94,32 @@ test('Markdown supports extras, literal Mermaid source, SVG markup, and safe lin
   assert.match(result.html, /\/api\/image\?file=/);
   assert.match(result.html, /disabled/); assert.match(result.html, /<table>/);
   assert.doesNotMatch(result.html, /<script>/); assert.match(result.html, /mermaid-source/);
+  for (const source of [
+    '<img src="![nested](image.png)" alt="**bold**">',
+    '<!-- ![hidden](image.png) -->',
+    '<script>![script](image.png)</script>',
+    '<![CDATA[<img src="image.png">]]>',
+    '<div><img src="image.png"></div>',
+  ]) {
+    const html = renderMarkdown(source, '/tmp/readme.md').html;
+    assert.doesNotMatch(html, /<(?:img|script|div|strong)\b/);
+    assert.ok(html.includes(source.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')));
+  }
+  for (const source of [
+    '![inline](image.png "Title")',
+    '![reference][picture]\n\n[picture]: image.png "Title"',
+    '![picture][]\n\n[picture]: image.png',
+    '![picture]\n\n[picture]: image.png',
+  ]) {
+    for (const htmlEnabled of [false, true]) {
+      const html = renderMarkdown(source, '/tmp/readme.md', 'token', { htmlEnabled }).html;
+      assert.match(html, /<img src="\/api\/image\?file=%2Ftmp%2Fimage\.png&amp;token=token"/);
+    }
+  }
+  for (const source of ['https://example.com/image.png', '//example.com/image.png', '#image']) {
+    assert.ok(renderMarkdown(`![image](${source})`, '/tmp/readme.md').html.includes(`src="${source}"`));
+  }
+  assert.match(renderMarkdown('[web](https://example.com)', '/tmp/readme.md').html, /rel="noopener noreferrer"/);
   const svg = '<svg viewBox="0 0 100 60">\n\n<!-- </svg> -->\n<svg><text>**literal**</text></svg>\n\n</svg>';
   const rendered = renderMarkdown(`# Before\n\n${svg}\n\n## After\nInline <svg><text>*literal*</text></svg>.\n\n\`\`\`svg\n${svg}\n\`\`\``, '/tmp/svg.md', '', { htmlEnabled: true });
   assert.ok(rendered.html.includes(svg));
@@ -116,6 +147,12 @@ test('paths round-trip special characters and reject symlinks', async t => {
   await symlink(file, path.join(root, 'link.md'));
   await assert.rejects(regularFile(path.join(root, 'link.md')), /Symbolic links/);
   await assert.rejects(regularFile('relative.md'), /absolute/);
+  for (const invalid of [null, '', `${root}\0file.md`]) await assert.rejects(regularFile(invalid), { status: 400 });
+  await assert.rejects(regularFile(root), /not a regular file/);
+  await assert.rejects(regularFile(path.parse(root).root), /not a regular file/);
+  const linkedDirectory = path.join(root, 'linked');
+  await symlink(root, linkedDirectory);
+  await assert.rejects(regularFile(path.join(linkedDirectory, path.basename(file))), { status: 403 });
 });
 
 test('indexer includes both extensions and hidden paths, excludes non-Markdown branches, and shares stage budgets', async t => {
@@ -192,6 +229,12 @@ test('navigation and cached partial trees budget complete file paths without emp
   result = capTreeNodes([...cached, ...selected], root, 2);
   assert.equal(result.nodes.size, 0);
   assert.equal(result.limited, true);
+  const orphan = { path: path.join(root, 'missing', 'orphan.md'), parent: path.join(root, 'missing'), name: 'orphan.md', type: 'file' };
+  const cycle = { path: path.join(root, 'cycle'), parent: path.join(root, 'cycle'), name: 'cycle', type: 'directory' };
+  const cyclicFile = { ...orphan, path: path.join(cycle.path, 'orphan.md'), parent: cycle.path };
+  result = capTreeNodes([...selected, ...selected, orphan, cycle, cyclicFile], root, 10);
+  assert.deepEqual([...result.nodes.values()], selected);
+  assert.equal(result.limited, false);
 });
 
 test('external selection is pinned but its directory is not indexed', async t => {
@@ -228,4 +271,34 @@ test('HTTP serves documents and permitted assets without exposing unrelated file
   assert.equal((await fetch(`${url}/api/image?${new URLSearchParams({ file: path.join(root, '.env') })}`)).status, 403);
   assert.equal((await fetch(`${url}/api/document?file=/nonexistent/absent.md`)).status, 404);
   assert.equal((await fetch(`${url}/.env`)).status, 404);
+  for (const [route, options, status, message] of [
+    ['/api/config', { method: 'POST' }, 405, 'Method not allowed'],
+    ['/api/config', { headers: { Origin: 'https://untrusted.example' } }, 403, 'Cross-origin requests are not permitted'],
+    ['/api/unknown', {}, 404, 'Not found'],
+    ['/api/document', {}, 400, 'An absolute filesystem path is required.'],
+    ['/..%2fpackage.json', {}, 404, 'Not found'],
+    ['/%ZZ', {}, 500, 'Unable to complete the request. Please try again.'],
+  ]) {
+    const response = await fetch(url + route, options);
+    assert.equal(response.status, status, route);
+    assert.deepEqual(await response.json(), { error: message }, route);
+  }
+  const rejectedHost = await new Promise((resolve, reject) => {
+    get(`${url}/api/config`, { headers: { Host: 'untrusted.example' } }, response => {
+      response.resume();
+      resolve(response.statusCode);
+    }).on('error', reject);
+  });
+  assert.equal(rejectedHost, 403);
+  assert.equal((await fetch(`${url}/api/config`, { headers: { Origin: url } })).status, 200);
+  for (const route of ['/', '/style.css', src]) {
+    const get = await fetch(url + route);
+    assert.equal(get.status, 200);
+    assert.equal(get.headers.get('x-content-type-options'), 'nosniff');
+    const head = await fetch(url + route, { method: 'HEAD' });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get('content-type'), get.headers.get('content-type'));
+    assert.equal(await head.text(), '');
+  }
+  assert.match((await fetch(url + src)).headers.get('content-security-policy'), /sandbox/);
 });

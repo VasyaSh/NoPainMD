@@ -1,3 +1,6 @@
+import type { UponSanitizeAttributeHookEvent } from 'dompurify';
+
+interface SVGScope { ids: Map<string, string>; elements: WeakMap<Element, string> }
 export const svgNamespace = 'http://www.w3.org/2000/svg';
 export const svgTags = ['svg', 'g', 'a', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'textpath', 'title', 'desc', 'defs', 'symbol', 'use', 'lineargradient', 'radialgradient', 'stop', 'clippath', 'mask', 'marker', 'pattern', 'filter', 'fegaussianblur', 'feoffset', 'feblend', 'fecolormatrix', 'fecomposite', 'femerge', 'femergenode', 'feflood', 'fedropshadow'];
 const styles = new Set(['fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', 'stroke-opacity', 'stroke-linecap', 'stroke-linejoin', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-miterlimit', 'opacity', 'color', 'background-color', 'display', 'stop-color', 'stop-opacity', 'flood-color', 'flood-opacity', 'font-size', 'font-style', 'font-weight', 'text-anchor', 'dominant-baseline', 'alignment-baseline', 'baseline-shift', 'letter-spacing', 'word-spacing', 'text-decoration', 'clip-path', 'clip-rule', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end', 'paint-order', 'vector-effect', 'shape-rendering', 'text-rendering']);
@@ -7,18 +10,18 @@ const paints = new Set(['fill', 'stroke', 'color', 'background-color', 'stop-col
 const references = new Set(['clip-path', 'mask', 'filter', 'marker-start', 'marker-mid', 'marker-end']);
 const hrefTags = new Set(['use', 'textpath', 'lineargradient', 'radialgradient', 'pattern']);
 
-export function svgAttributeSanitizer() {
-  const scopes = new WeakMap();
+export function svgAttributeSanitizer(): (node: Element, data: UponSanitizeAttributeHookEvent) => boolean {
+  const scopes = new WeakMap<SVGSVGElement, SVGScope>();
   let elementsCount = 0;
-  function scopeFor(node) {
+  function scopeFor(node: Element) {
     let root = node.closest('svg');
     if (!root) return null;
-    while (root.parentElement?.closest('svg')) root = root.parentElement.closest('svg');
+    for (let parent = root.parentElement?.closest('svg'); parent; parent = root.parentElement?.closest('svg')) root = parent;
     if (!scopes.has(root)) {
       // Keep references inside their SVG, with unique IDs across diagrams.
       const prefix = `nopainmd-svg-${crypto.getRandomValues(new Uint32Array(4)).join('-')}-`;
-      const ids = new Map();
-      const elements = new WeakMap();
+      const ids = new Map<string, string>();
+      const elements = new WeakMap<Element, string>();
       for (const element of [root, ...root.querySelectorAll('[id]')]) {
         if (element.namespaceURI !== svgNamespace || !svgTags.includes(element.localName.toLowerCase()) || !element.id) continue;
         const id = prefix + elementsCount++;
@@ -29,12 +32,12 @@ export function svgAttributeSanitizer() {
     }
     return scopes.get(root);
   }
-  function valueFor(name, value, scope) {
+  function valueFor(name: string, value: string, scope: SVGScope): string | null {
     value = value.trim();
     if (paints.has(name) || references.has(name)) {
       const reference = name !== 'background-color' && /^url\(\s*(['"]?)#([\w.:-]+)\1\s*\)$/iu.exec(value);
       if (reference) {
-        const id = scope.ids.get(reference[2]);
+        const id = scope.ids.get(reference[2] ?? '');
         return id ? `url(#${id})` : null;
       }
       if (references.has(name)) return value === 'none' ? value : null;
@@ -46,7 +49,7 @@ export function svgAttributeSanitizer() {
   return (node, data) => {
     if (node.namespaceURI !== svgNamespace) return false;
     const scope = scopeFor(node);
-    let value = null;
+    let value: string | null | undefined = null;
     if (scope && attributes.has(data.attrName)) {
       if (data.attrName === 'id') value = scope.elements.get(node);
       else if (data.attrName === 'href' || data.attrName === 'xlink:href') {
@@ -65,7 +68,7 @@ export function svgAttributeSanitizer() {
       } else value = valueFor(data.attrName, data.attrValue, scope);
     }
     data.keepAttr = value != null;
-    if (data.keepAttr) data.attrValue = value;
+    if (value != null) data.attrValue = value;
     return true;
   };
 }

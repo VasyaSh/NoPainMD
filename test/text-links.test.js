@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { textLinks } from '../public/text-links.js';
+import { textLinks } from '../dist/shared/text-links.js';
 
 test('text links recognize qualified URLs and relative Markdown paths without swallowing punctuation', () => {
   const urls = [

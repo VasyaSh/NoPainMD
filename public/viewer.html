@@ -1,0 +1,18 @@
+<div id="layout">
+    <aside id="sidebar" aria-label="Directory navigation">
+      <header class="sidebar-header">
+        <div class="directory-heading"><strong>Directory</strong><button id="reload" class="icon-button" title="Reload" aria-label="Reload"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M20 12a8 8 0 1 0-2.3 5.7"/></svg></button><input id="quick-search" type="search" placeholder="Quick Search .md" aria-label="Quick Search .md" autocomplete="off" spellcheck="false"></div>
+        <div id="base-path" tabindex="0"></div>
+      </header>
+      <div id="tree-scroll"><nav id="tree" aria-label="Markdown files"></nav><div id="notices" role="status"></div></div>
+      <footer>
+        <div class="footer-controls">
+        <button id="theme" role="switch" aria-checked="false" aria-label="Dark theme" title="Switch theme"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/></svg><span id="theme-label">Light</span></button>
+        <button id="html-toggle" role="switch" aria-checked="true" aria-label="HTML" title="Disable HTML rendering" disabled><svg class="html-indicator" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4"/></svg><span>HTML</span></button>
+        </div>
+        <small class="copyright">Copyright 2026 <a href="https://github.com/VasyaSh/NoPainMD" target="_blank" rel="noopener noreferrer">NoPainMd</a></small>
+      </footer>
+    </aside>
+    <div id="divider" role="separator" aria-label="Resize directory panel" aria-orientation="vertical" aria-valuemin="50" aria-valuemax="1000" aria-valuenow="300" tabindex="0"><svg viewBox="0 0 8 32" aria-hidden="true"><path d="M2 5v22M6 5v22"/></svg></div>
+    <main id="document-panel"><button id="print" title="Print" aria-label="Print" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6M6 17H3V9h18v8h-3M6 14h12v7H6Z"/><path d="M17 12h1"/></svg></button><article id="content" class="empty"><div>Select a Markdown file</div></article></main>
+  </div>

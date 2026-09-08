@@ -1,6 +1,6 @@
 {
   "name": "nopainmd",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "A local Markdown browser with a directory tree, Mermaid, themes, and printing.",
   "author": "Vasil Shpilchin",
   "repository": {
@@ -13,28 +13,30 @@
   },
   "type": "module",
   "bin": {
-    "nopainmd": "bin/nopainmd.js"
+    "nopainmd": "dist/bin/nopainmd.js"
   },
   "engines": {
     "node": ">=22"
   },
   "license": "MIT",
   "files": [
-    "bin",
-    "src",
-    "public",
+    "dist",
     "README.md",
     "LICENSE",
     ".env.example"
   ],
   "scripts": {
-    "start": "node bin/nopainmd.js",
+    "start": "node dist/bin/nopainmd.js",
     "build": "node scripts/build.js",
     "prepack": "npm run build",
     "test": "node --test test/*.test.js",
+    "pretest:coverage": "node -e \"require('node:fs').mkdirSync('coverage', { recursive: true })\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"dist/{bin,src,shared}/**/*.js\" --test-coverage-lines=95 --test-coverage-branches=80 --test-coverage-functions=100 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info test/*.test.js",
     "test:browser": "playwright test",
     "test:package": "node scripts/test-package.js",
-    "test:all": "npm test && npm run test:browser"
+    "test:all": "npm run typecheck && npm run lint && npm run build && npm run test:coverage && npm run test:browser",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
     "markdown-it": "^15.0.1",
@@ -42,9 +44,29 @@
     "open": "^11.0.2"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.1",
     "dompurify": "3.4.15",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0",
     "mermaid": "^11.17.2",
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.4",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0"
+  },
+  "main": "./dist/public/viewer.js",
+  "types": "./dist/client/viewer.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/client/viewer.d.ts",
+      "import": "./dist/public/viewer.js"
+    },
+    "./server": {
+      "types": "./dist/src/server.d.ts",
+      "import": "./dist/src/server.js"
+    },
+    "./package.json": "./package.json"
   }
 }
