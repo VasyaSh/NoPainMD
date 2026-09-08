@@ -1,6 +1,7 @@
 import { limitNotice } from '../shared/limits.js';
 import { capTreeNodes } from '../shared/tree-nodes.js';
 import { prepareDocument } from './document.js';
+import { initialTheme } from './theme.js';
 
 import type * as MermaidModule from 'mermaid';
 import { errorMessage, errorStatus, isAbortError } from '../shared/errors.js';
@@ -66,7 +67,7 @@ export function startViewer(root: HTMLElement, dom: HTMLElement | ShadowRoot, op
   }
   try { const saved = storageKey === false ? null : localStorage.getItem(`${storageKey}.html`); if (saved === 'true' || saved === 'false') state.htmlPreference = saved === 'true'; } catch {}
   if (options.htmlEnabled !== undefined) state.htmlPreference = options.htmlEnabled;
-  try { root.dataset.theme = options.theme ?? (storageKey && localStorage.getItem(`${storageKey}.theme`) === 'dark' ? 'dark' : 'light'); } catch { root.dataset.theme = options.theme ?? 'light'; }
+  root.dataset.theme = initialTheme(storageKey, options.theme);
   try {
     const saved = Number(storageKey && localStorage.getItem(`${storageKey}.sidebarWidth`));
     if (Number.isFinite(saved) && saved > 0) width(saved, false);

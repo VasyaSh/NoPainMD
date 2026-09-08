@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.15
+
+- Use the browser's preferred theme at startup when no valid theme is saved, including before first paint and in embedded viewers; explicit viewer settings take priority.
+
 ## 0.1.14
 
 - Migrated the CLI, server, viewer, and shared modules to strict TypeScript with exported type declarations.
