@@ -29,8 +29,7 @@ surrounding navigation or controls.
 
 ## Get Started
 
-The npm package is named `nopainmd` and is published by
-[`vasyash`](https://www.npmjs.com/~vasyash). Install it globally from npm:
+Install it globally from npm:
 
 ```sh
 npm install -g nopainmd
@@ -43,7 +42,7 @@ git clone https://github.com/VasyaSh/NoPainMD.git
 cd NoPainMD
 npm ci
 npm pack
-npm install -g ./nopainmd-0.1.15.tgz
+npm install -g ./nopainmd-0.1.16.tgz
 ```
 
 `npm pack` builds and bundles the browser assets automatically. If the version
@@ -69,13 +68,13 @@ Set these variables in your shell or in a `.env` file in the directory where you
 launch NoPainMD; see [.env.example](.env.example).
 
 - `NOPAINMD_BASE_DIR` selects the directory to browse, defaulting to `.` (the directory where you launch NoPainMD).
-- `NOPAINMD_HOST` sets the server's hostname or address, defaulting to `localhost`.
+- `NOPAINMD_HOST` sets the server's hostname or address, defaulting to `hostname -f` when the launch environment contains `SSH_CONNECTION`, `SSH_CLIENT`, or `SSH_TTY`, and to `localhost` otherwise or if the lookup fails.
 - `NOPAINMD_PORT` sets the server port, defaulting to `3000`, with `0` choosing an available port automatically.
 - `NOPAINMD_FONT` sets the text font using its literal name, defaulting to the bundled `Open Sans`; preformatted text and code blocks use `monospace`.
 - `NOPAINMD_FONT_ZOOM` scales text and document content as a percentage, defaulting to `100` (100%).
 - `NOPAINMD_HTML_ENABLED` controls raw HTML rendering, defaulting to `true` unless a saved browser toggle choice overrides it; Markdown images and Mermaid diagrams render in either mode.
 - `NOPAINMD_INDEX_MAX_MS` sets the indexing time limit in milliseconds, defaulting to `5000` (5 seconds).
-- `NOPAINMD_INDEX_MAX_NODES` limits the number of files and directories included in the tree, counting collapsed entries too, and defaults to `1000`.
+- `NOPAINMD_INDEX_MAX_NODES` limits the number of files and directories included in the tree, counting collapsed entries too, and defaults to `10000`.
 - `NODE_DEBUG` enables detailed read-error logging to stderr when it includes `nopainmd`, defaults to disabled, and must be set in the launch environment rather than the application's `.env` file.
 
 To diagnose unreadable files or directories, start with:

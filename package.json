@@ -1,6 +1,6 @@
 {
   "name": "nopainmd",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "A local Markdown browser with a directory tree, Mermaid, themes, and printing.",
   "author": "Vasil Shpilchin",
   "repository": {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.16
+
+- Increased the default tree limit to 10,000 file and directory entries.
+- Default to `hostname -f` over SSH unless a host is explicitly configured; fall back to `localhost` if the lookup fails.
+
 ## 0.1.15
 
 - Use the browser's preferred theme at startup when no valid theme is saved, including before first paint and in embedded viewers; explicit viewer settings take priority.

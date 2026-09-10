@@ -5,7 +5,7 @@ import type { IndexOptions, ScanMessage } from './index-types.js';
 import type { IndexResult } from '../shared/types.js';
 import { logReadError } from './logger.js';
 
-export function indexDirectory({ root, selected = null, maxMs = 5000, maxNodes = 1000, signal }: IndexOptions): Promise<IndexResult> {
+export function indexDirectory({ root, selected = null, maxMs = 5000, maxNodes = 10000, signal }: IndexOptions): Promise<IndexResult> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const seed = selected ? fileNodes(root, selected) : [];

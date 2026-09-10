@@ -58,7 +58,7 @@ export function startViewer(root: HTMLElement, dom: HTMLElement | ShadowRoot, op
     return element;
   }
   const ui = { tree: $('#tree'), treeScroll: $('#tree-scroll'), panel: $('#document-panel'), content: $('#content'), reload: $<HTMLButtonElement>('#reload'), search: $<HTMLInputElement>('#quick-search'), print: $<HTMLButtonElement>('#print'), theme: $<HTMLButtonElement>('#theme'), html: $<HTMLButtonElement>('#html-toggle'), divider: $('#divider'), notices: $('#notices') };
-  const state: ViewState = { config: { root: '', separator: '/', font: 'Open Sans', fontZoom: 100, maxNodes: 1000, htmlEnabled: true, warnings: [] }, nodes: new Map(), expanded: new Set(), collapsed: new Set(), filtered: { query: '', nodes: new Map(), expanded: new Set(), collapsed: new Set() }, document: null, selected: null, request: 0, render: 0, controller: null, warnings: [], limits: [], busy: false, indexed: false, htmlEnabled: true };
+  const state: ViewState = { config: { root: '', separator: '/', font: 'Open Sans', fontZoom: 100, maxNodes: 10000, htmlEnabled: true, warnings: [] }, nodes: new Map(), expanded: new Set(), collapsed: new Set(), filtered: { query: '', nodes: new Map(), expanded: new Set(), collapsed: new Set() }, document: null, selected: null, request: 0, render: 0, controller: null, warnings: [], limits: [], busy: false, indexed: false, htmlEnabled: true };
   if (options.history && options.file !== undefined) {
     const url = new URL(location.href);
     if (options.file === null) url.searchParams.delete('file'); else url.searchParams.set('file', options.file);

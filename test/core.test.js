@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { get } from 'node:http';
@@ -20,7 +20,10 @@ async function fixture(t) {
 
 test('configuration honors precedence, validates live settings, and recovers from unreadable .env', async t => {
   const root = await fixture(t);
-  assert.equal((await createConfig(root, {}, {})()).baseDir, '.');
+  const defaults = await createConfig(root, {}, {})();
+  assert.equal(defaults.baseDir, '.');
+  assert.equal(defaults.host, 'localhost');
+  assert.equal(defaults.maxNodes, 10000);
   const read = createConfig(root, { port: 4444 }, { NOPAINMD_BASE_DIR: '/from-env', NOPAINMD_PORT: '5555', NOPAINMD_INDEX_MAX_NODES: '20' });
   await writeFile(path.join(root, '.env'), 'NOPAINMD_BASE_DIR="../Project docs"\nNOPAINMD_PORT=3333\nNOPAINMD_FONT="Times New Roman"\nNOPAINMD_FONT_ZOOM=125\nNOPAINMD_INDEX_MAX_NODES=10');
   let config = await read();
@@ -51,6 +54,61 @@ test('configuration honors precedence, validates live settings, and recovers fro
   assert.doesNotMatch(unreadable.warnings.join('\n'), /EISDIR|readFile|stack/);
   await rm(file, { recursive: true }); await writeFile(file, 'NOPAINMD_FONT_ZOOM=150');
   assert.equal((await read()).fontZoom, 150);
+});
+
+test('SSH host defaults are cached, honor explicit hosts, and tolerate hostname failures', async t => {
+  const root = await fixture(t);
+  const bin = path.join(root, 'bin');
+  await mkdir(bin);
+  const calls = path.join(root, 'hostname-calls');
+  await writeFile(calls, '');
+  await writeFile(path.join(bin, 'hostname'), `#!${process.execPath}
+const fs = require('node:fs');
+if (process.argv.slice(2).join(' ') !== '-f') process.exit(2);
+fs.appendFileSync(${JSON.stringify(calls)}, '1');
+const mode = process.env.TEST_HOSTNAME_MODE;
+if (mode === 'fail') { process.stderr.write('Private hostname error'); process.exit(1); }
+if (mode === 'wait') setTimeout(() => process.stdout.write('too-late.example.test'), 10000);
+else process.stdout.write(mode === 'empty' ? '\\n' : mode === 'invalid' ? 'bad host\\n' : ' docs.example.test \\n');
+`, { mode: 0o755 });
+  const environment = { ...process.env, PATH: bin, SSH_CONNECTION: '', SSH_CLIENT: '', SSH_TTY: '' };
+  delete environment.NOPAINMD_HOST;
+  for (const marker of [{}, { SSH_AUTH_SOCK: '/agent' }]) {
+    assert.equal((await createConfig(root, {}, { ...environment, ...marker })()).host, 'localhost');
+  }
+  await writeFile(path.join(root, '.env'), 'SSH_CONNECTION=not-a-launch-setting');
+  assert.equal((await createConfig(root, {}, environment)()).host, 'localhost');
+  const ssh = { ...environment, SSH_CONNECTION: '192.0.2.1 12345 192.0.2.2 22', NOPAINMD_HOST: 'shell.example.test' };
+  assert.equal((await createConfig(root, {}, ssh)()).host, 'shell.example.test');
+  await writeFile(path.join(root, '.env'), 'NOPAINMD_HOST=file.example.test');
+  assert.equal((await createConfig(root, {}, ssh)()).host, 'file.example.test');
+  assert.equal((await createConfig(root, { host: 'cli.example.test' }, ssh)()).host, 'cli.example.test');
+  assert.equal(await readFile(calls, 'utf8'), '');
+  await rm(path.join(root, '.env'));
+  let count = 0;
+  for (const key of ['SSH_CONNECTION', 'SSH_CLIENT', 'SSH_TTY']) {
+    const startup = { ...environment, [key]: 'ssh-session' };
+    const read = createConfig(root, {}, startup);
+    startup[key] = '';
+    assert.equal((await read()).host, 'docs.example.test');
+    assert.equal((await read()).host, 'docs.example.test');
+    assert.equal((await readFile(calls, 'utf8')).length, ++count);
+    await writeFile(path.join(root, '.env'), 'NOPAINMD_HOST=localhost');
+    assert.equal((await read()).host, 'localhost');
+    await rm(path.join(root, '.env'));
+    assert.equal((await read()).host, 'docs.example.test');
+    assert.equal((await readFile(calls, 'utf8')).length, count);
+  }
+  for (const mode of ['fail', 'empty', 'invalid', 'wait']) {
+    const read = createConfig(root, {}, { ...environment, SSH_CONNECTION: 'ssh-session', TEST_HOSTNAME_MODE: mode });
+    const config = await read();
+    assert.equal(config.host, 'localhost');
+    assert.equal((await read()).host, 'localhost');
+    assert.equal(config.readErrors, 0);
+    assert.doesNotMatch(config.warnings.join('\n'), /Private hostname error/);
+    assert.equal((await readFile(calls, 'utf8')).length, ++count);
+  }
+  assert.equal((await createConfig(root, {}, { ...environment, SSH_CONNECTION: 'ssh-session', PATH: path.join(root, 'missing') })()).host, 'localhost');
 });
 
 test('document HTML option uses the environment default and permits a per-browser override', async t => {
@@ -162,6 +220,7 @@ test('indexer includes both extensions and hidden paths, excludes non-Markdown b
   for (const file of ['.hidden/a.MD', 'node_modules/b.md', 'docs/three.markdown', 'docs/four.MarkDown', 'root.md', 'docs/ignored.markdown.txt', 'docs/ignored.mdx']) await writeFile(path.join(root, file), '# title');
   await symlink(root, path.join(root, 'loop'));
   const result = await indexDirectory({ root, selected });
+  assert.equal(result.maxNodes, 10000);
   assert.equal(result.nodes.length, 8);
   assert.equal(result.filesFound, 5);
   assert.deepEqual(result.stages, ['directory', 'base']);
@@ -212,6 +271,11 @@ test('node budget counts the fully expanded Markdown tree, not checked or omitte
   const tooDeep = await indexDirectory({ root, selected, maxNodes: 2 });
   assert.deepEqual(tooDeep.nodes, []);
   assert.deepEqual(tooDeep.limits, ['nodes']);
+  for (let i = 0; i < 1001; i++) await writeFile(path.join(root, `extra-${i}.md`), '');
+  const expanded = await indexDirectory({ root });
+  assert.equal(expanded.nodes.length, 1005);
+  assert.equal(expanded.maxNodes, 10000);
+  assert.deepEqual(expanded.limits, []);
 });
 
 test('navigation and cached partial trees budget complete file paths without empty directories', () => {

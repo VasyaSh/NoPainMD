@@ -1,14 +1,24 @@
 import { readFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import path from 'node:path';
-import { parseEnv } from 'node:util';
+import { parseEnv, promisify } from 'node:util';
 import { errorCode } from '../shared/errors.js';
 import type { Config, Settings } from '../shared/types.js';
 import { logReadError } from './logger.js';
 
-export const defaults: Readonly<Settings> = Object.freeze({ baseDir: '.', host: 'localhost', port: 3000, font: 'Open Sans', fontZoom: 100, maxMs: 5000, maxNodes: 1000, htmlEnabled: true });
+export const defaults: Readonly<Settings> = Object.freeze({ baseDir: '.', host: 'localhost', port: 3000, font: 'Open Sans', fontZoom: 100, maxMs: 5000, maxNodes: 10000, htmlEnabled: true });
 const keys = { baseDir: 'BASE_DIR', host: 'HOST', port: 'PORT', font: 'FONT', fontZoom: 'FONT_ZOOM', maxMs: 'INDEX_MAX_MS', maxNodes: 'INDEX_MAX_NODES', htmlEnabled: 'HTML_ENABLED' } as const;
+const execute = promisify(execFile);
 export type ConfigOverrides = { [K in keyof Settings]?: Settings[K] | string };
 export type ReadConfig = () => Promise<Config>;
+
+async function defaultHost(environment: NodeJS.ProcessEnv): Promise<string> {
+  if (!(environment.SSH_CONNECTION || environment.SSH_CLIENT || environment.SSH_TTY)) return defaults.host;
+  try {
+    const { stdout } = await execute('hostname', ['-f'], { env: environment, encoding: 'utf8', timeout: 1000, maxBuffer: 1024, windowsHide: true });
+    return stdout.trim() || defaults.host;
+  } catch { return defaults.host; }
+}
 
 export function parseBoolean(raw: unknown): boolean | undefined {
   const value = String(raw).trim().toLowerCase();
@@ -20,6 +30,7 @@ export function createConfig(root: string, cli: ConfigOverrides = {}, environmen
   const startup = { ...environment };
   let previous = { ...defaults };
   let lastFile: Record<string, string | undefined> = {};
+  let fallbackHost: Promise<string> | undefined;
   return async function readConfig() {
     const warnings = [];
     let file: Record<string, string | undefined> = {};
@@ -37,7 +48,7 @@ export function createConfig(root: string, cli: ConfigOverrides = {}, environmen
     for (const key of Object.keys(keys) as (keyof Settings)[]) {
       const suffix = keys[key];
       const name = `NOPAINMD_${suffix}`;
-      const raw = cli[key] ?? file[name] ?? startup[name] ?? defaults[key];
+      const raw = cli[key] ?? file[name] ?? startup[name] ?? (key === 'host' ? await (fallbackHost ??= defaultHost(startup)) : defaults[key]);
       let value: string | number | boolean | undefined;
       let valid: boolean;
       if (key === 'htmlEnabled') {
