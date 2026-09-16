@@ -18,7 +18,7 @@ Requires Node.js 22 or newer. Run it locally, or bundle with your application!
 ## Features
 
 Find `.md` and `.markdown` files in a searchable directory tree, jump to headings,
-and follow links between documents.
+follow links between documents, and read YAML front matter as preformatted text.
 View Mermaid diagrams and embedded SVG, toggle HTML rendering, and read comfortably
 with a resizable sidebar and light or dark themes, initially chosen from your saved
 setting or browser preference.
@@ -42,7 +42,7 @@ git clone https://github.com/VasyaSh/NoPainMD.git
 cd NoPainMD
 npm ci
 npm pack
-npm install -g ./nopainmd-0.1.16.tgz
+npm install -g ./nopainmd-0.1.17.tgz
 ```
 
 `npm pack` builds and bundles the browser assets automatically. If the version

@@ -7,6 +7,7 @@ import taskLists from 'markdown-it-task-lists';
 import { headingId } from '../shared/headings.js';
 import { svgMarkup } from './svg-markup.js';
 import { literalHTML } from './literal-html.js';
+import { frontMatter } from './front-matter.js';
 
 function plain(tokens: Token[] | null = []): string {
   return (tokens ?? []).map(token => {
@@ -20,7 +21,7 @@ function plain(tokens: Token[] | null = []): string {
 
 export function renderMarkdown(source: string, file: string, imageToken = '', { htmlEnabled = false }: { htmlEnabled?: boolean } = {}): RenderedMarkdown {
   // Linkify in the browser after sanitization.
-  const md = new MarkdownIt({ html: true, linkify: false }).use(taskLists).use(svgMarkup);
+  const md = new MarkdownIt({ html: true, linkify: false }).use(taskLists).use(svgMarkup).use(frontMatter);
   if (!htmlEnabled) md.use(literalHTML);
   // Random markers distinguish renderer metadata from author HTML.
   const markers: Record<string, RenderMarker> = {};

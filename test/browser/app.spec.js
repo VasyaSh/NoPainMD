@@ -913,6 +913,36 @@ test('a slow previous document cannot replace a newer navigation', async ({ page
   await expect(page.locator('.selected')).toHaveText('plain.md');
 });
 
+test('YAML front matter stays literal and monospace through HTML toggles, themes, and printing', async ({ page }) => {
+  const file = path.join(root, 'front-matter.markdown');
+  const header = '---\n# Metadata comment\n## Not an outline entry\nname: "Demo & <tools>"\nsummary: |\n  <h1>Fake title</h1>\n  <img src="missing" onerror="window.headerExecuted = true">\n  **bold** [Guide](plain.md)\n  ```mermaid\n  flowchart LR\n    A --> B\n  ```\nlinks:\n  - https://example.com\n  - plain.md\n---\n';
+  await writeFile(file, `${header}# Document\n## Section\n[Plain](plain.md)\n\n\`\`\`mermaid\nflowchart LR\n A --> B\n\`\`\``);
+  await open(page, file);
+  const pre = page.locator('#content > pre').first();
+  for (const enabled of [true, false, true]) {
+    if ((await page.locator('#html-toggle').getAttribute('aria-checked')) !== String(enabled)) await page.locator('#html-toggle').click();
+    await expect(page.locator('#html-toggle')).toBeEnabled();
+    expect(await pre.textContent()).toBe(header);
+    await expect(pre).toHaveCSS('font-family', 'monospace');
+    await expect(pre.locator('code')).toHaveCSS('font-family', 'monospace');
+    await expect(pre.locator('a, img, h1, svg, strong')).toHaveCount(0);
+    await expect(page.locator('#content h1')).toHaveText('Document');
+    await expect(page.locator('.toc a')).toHaveText('Section');
+    await expect(page).toHaveTitle('Document');
+    await expect(page.locator('.mermaid-screen svg')).toHaveCount(1);
+  }
+  expect(await page.evaluate(() => window.headerExecuted)).toBeUndefined();
+  const link = page.locator('#content a', { hasText: 'Plain' });
+  expect(new URL(await link.getAttribute('href'), base).searchParams.get('file')).toBe(path.join(root, 'plain.md'));
+  await page.locator('#theme').click();
+  await expect(page.locator('#print')).toBeEnabled();
+  expect(await pre.textContent()).toBe(header);
+  await page.emulateMedia({ media: 'print' });
+  await expect(pre).toBeVisible();
+  await expect(pre).toHaveCSS('font-family', 'monospace');
+  expect(await pre.textContent()).toBe(header);
+});
+
 test('Mermaid renders locally, follows themes, handles invalid source, and prints completed SVGs', async ({ page }, testInfo) => {
   const file = path.join(root, 'diagrams.md');
   await writeFile(file, '# Diagrams\n```mermaid\nflowchart LR\n A[Start] --> B[End]\n```\n```mermaid\nsequenceDiagram\n Alice->>Bob: Hello\n```\n```mermaid\ninvalid diagram syntax\n```');
