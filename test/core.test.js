@@ -146,12 +146,41 @@ test('heading extraction uses parsed headings, correct title, duplicate anchors,
   assert.equal(formatted.title, 'Picture code title');
 });
 
+test('opening YAML front matter renders literally without changing body headings or Markdown', () => {
+  const metadata = '# Header comment\n## Another comment\nname: "Demo & <tools>"\nsummary: |\n  **bold** [Guide](plain.md)\n  </code></pre><img src="missing" onerror="alert(1)">\n  <h1>Fake title</h1>\n  ---\n  ...\n  ```mermaid\n  flowchart LR\n    A --> B\n  ```\nlinks:\n  - https://example.com\n  - ./plain.md\n';
+  for (const [prefix, newline, closing] of [['', '\n', '---'], ['\uFEFF', '\r\n', '---'], ['', '\r', '...'], ['', '\n', '...']]) {
+    const header = `--- \t\n${metadata}${closing}\t\n`;
+    const source = `${prefix}${header}# Document\n## Section\n**Body**\n\n---\n\nAfter`.replaceAll('\n', newline);
+    const escaped = header.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    for (const htmlEnabled of [false, true]) {
+      const result = renderMarkdown(source, '/tmp/header.md', '', { htmlEnabled });
+      assert.ok(result.html.startsWith(`<pre><code>${escaped}</code></pre>\n`));
+      assert.equal(result.title, 'Document');
+      assert.deepEqual(result.headings.map(heading => heading.text), ['Section']);
+      assert.equal(Object.values(result.markers).filter(marker => marker.kind === 'heading').length, 2);
+      assert.doesNotMatch(result.html, /<img|<h1>Fake|mermaid-block/);
+      assert.match(result.html, /<p><strong>Body<\/strong><\/p>\n<hr>\n<p>After<\/p>/);
+    }
+  }
+  for (const source of ['---\n---', '---\nname: Demo\n...', '---\n# Comment\n---\n']) {
+    const result = renderMarkdown(source, '/tmp/header.md');
+    assert.match(result.html, /^<pre><code>/);
+    assert.equal(result.title, 'header.md');
+    assert.deepEqual(result.headings, []);
+  }
+  for (const source of ['---\n# Body', '---\nname: Demo\n----', '\n---\nname: Demo\n---', '# Body\n\n---\nname: Demo\n---', '> ---\n> name: Demo\n> ---', '- ---\n  name: Demo\n  ---']) {
+    assert.doesNotMatch(renderMarkdown(source, '/tmp/body.md').html, /<pre>/);
+  }
+  assert.match(renderMarkdown('```yaml\n---\nname: Demo\n---\n```', '/tmp/code.md').html, /^<pre><code class="language-yaml">---\nname: Demo\n---\n<\/code><\/pre>/);
+});
+
 test('Markdown supports extras, literal Mermaid source, SVG markup, and safe links/images', () => {
   const result = renderMarkdown('[guide](sub/guide%20%26%23.md#go)\n![image](img.png)\n\n<script>alert(1)</script>\n\n- [x] Done\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\n```mermaid\nflowchart LR\n A["<script>"] --> B\n```', '/tmp/readme.md', 'token');
   assert.match(result.html, /href="sub\/guide%20%26%23.md#go"/);
   assert.match(result.html, /\/api\/image\?file=/);
   assert.match(result.html, /disabled/); assert.match(result.html, /<table>/);
-  assert.doesNotMatch(result.html, /<script>/); assert.match(result.html, /mermaid-source/);
+  assert.ok(result.html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+  assert.match(result.html, /mermaid-source/);
   for (const source of [
     '<img src="![nested](image.png)" alt="**bold**">',
     '<!-- ![hidden](image.png) -->',

@@ -793,8 +793,15 @@ test('safe HTML and embedded SVG render, preserve local references, toggle immed
 
 test('HTML sanitization blocks executable markup and UI impersonation even without CSP', async ({ browser }) => {
   const file = path.join(external, 'unsafe.md');
+  const scripts = [
+    '<script>window.htmlAttack = true</script>',
+    '<SCRIPT>window.htmlAttack = true</SCRIPT>',
+    '<ScRiPt type="text/javascript">window.htmlAttack = true</sCrIpT>',
+    '<SCRIPT src="https://example.com/attack.js"></SCRIPT>',
+    '<ScRiPt>window.htmlAttack = true</ScRiPt data-extra="ignored">',
+  ];
   await writeFile(file, `# Safe <em>title</em>
-<script>window.htmlAttack = true</script>
+${scripts.join('\n')}
 <style>body { display: none }</style>
 <iframe srcdoc="<script>parent.htmlAttack=true</script>"></iframe>
 <svg id="content" viewBox="0 0 40 40" width="40" height="40" style="position:fixed; inset:0; background:url(https://example.com/attack); fill:red">
@@ -857,9 +864,11 @@ flowchart LR
     await page.locator('.toc a').click();
     expect(new URL(page.url()).hash).toBe('#theme');
     await page.locator('#html-toggle').click(); await expect(page.locator('#reload')).toBeEnabled();
-    await expect(page.locator('#content')).toContainText('<script>window.htmlAttack = true</script>');
+    for (const script of scripts) await expect(page.locator('#content')).toContainText(script);
+    await expect(page.locator('#content script')).toHaveCount(0);
     await expect(page.locator('.mermaid-screen svg')).toHaveCount(1);
     expect(await page.evaluate(() => window.htmlAttack)).toBeUndefined();
+    expect(remote).toEqual([]);
   } finally { await context.close(); }
 });
 
@@ -911,6 +920,36 @@ test('a slow previous document cannot replace a newer navigation', async ({ page
   release();
   await expect(page.locator('#content')).toHaveText('A plain document.');
   await expect(page.locator('.selected')).toHaveText('plain.md');
+});
+
+test('YAML front matter stays literal and monospace through HTML toggles, themes, and printing', async ({ page }) => {
+  const file = path.join(root, 'front-matter.markdown');
+  const header = '---\n# Metadata comment\n## Not an outline entry\nname: "Demo & <tools>"\nsummary: |\n  <h1>Fake title</h1>\n  <img src="missing" onerror="window.headerExecuted = true">\n  **bold** [Guide](plain.md)\n  ```mermaid\n  flowchart LR\n    A --> B\n  ```\nlinks:\n  - https://example.com\n  - plain.md\n---\n';
+  await writeFile(file, `${header}# Document\n## Section\n[Plain](plain.md)\n\n\`\`\`mermaid\nflowchart LR\n A --> B\n\`\`\``);
+  await open(page, file);
+  const pre = page.locator('#content > pre').first();
+  for (const enabled of [true, false, true]) {
+    if ((await page.locator('#html-toggle').getAttribute('aria-checked')) !== String(enabled)) await page.locator('#html-toggle').click();
+    await expect(page.locator('#html-toggle')).toBeEnabled();
+    expect(await pre.textContent()).toBe(header);
+    await expect(pre).toHaveCSS('font-family', 'monospace');
+    await expect(pre.locator('code')).toHaveCSS('font-family', 'monospace');
+    await expect(pre.locator('a, img, h1, svg, strong')).toHaveCount(0);
+    await expect(page.locator('#content h1')).toHaveText('Document');
+    await expect(page.locator('.toc a')).toHaveText('Section');
+    await expect(page).toHaveTitle('Document');
+    await expect(page.locator('.mermaid-screen svg')).toHaveCount(1);
+  }
+  expect(await page.evaluate(() => window.headerExecuted)).toBeUndefined();
+  const link = page.locator('#content a', { hasText: 'Plain' });
+  expect(new URL(await link.getAttribute('href'), base).searchParams.get('file')).toBe(path.join(root, 'plain.md'));
+  await page.locator('#theme').click();
+  await expect(page.locator('#print')).toBeEnabled();
+  expect(await pre.textContent()).toBe(header);
+  await page.emulateMedia({ media: 'print' });
+  await expect(pre).toBeVisible();
+  await expect(pre).toHaveCSS('font-family', 'monospace');
+  expect(await pre.textContent()).toBe(header);
 });
 
 test('Mermaid renders locally, follows themes, handles invalid source, and prints completed SVGs', async ({ page }, testInfo) => {
