@@ -793,8 +793,15 @@ test('safe HTML and embedded SVG render, preserve local references, toggle immed
 
 test('HTML sanitization blocks executable markup and UI impersonation even without CSP', async ({ browser }) => {
   const file = path.join(external, 'unsafe.md');
+  const scripts = [
+    '<script>window.htmlAttack = true</script>',
+    '<SCRIPT>window.htmlAttack = true</SCRIPT>',
+    '<ScRiPt type="text/javascript">window.htmlAttack = true</sCrIpT>',
+    '<SCRIPT src="https://example.com/attack.js"></SCRIPT>',
+    '<ScRiPt>window.htmlAttack = true</ScRiPt data-extra="ignored">',
+  ];
   await writeFile(file, `# Safe <em>title</em>
-<script>window.htmlAttack = true</script>
+${scripts.join('\n')}
 <style>body { display: none }</style>
 <iframe srcdoc="<script>parent.htmlAttack=true</script>"></iframe>
 <svg id="content" viewBox="0 0 40 40" width="40" height="40" style="position:fixed; inset:0; background:url(https://example.com/attack); fill:red">
@@ -857,9 +864,11 @@ flowchart LR
     await page.locator('.toc a').click();
     expect(new URL(page.url()).hash).toBe('#theme');
     await page.locator('#html-toggle').click(); await expect(page.locator('#reload')).toBeEnabled();
-    await expect(page.locator('#content')).toContainText('<script>window.htmlAttack = true</script>');
+    for (const script of scripts) await expect(page.locator('#content')).toContainText(script);
+    await expect(page.locator('#content script')).toHaveCount(0);
     await expect(page.locator('.mermaid-screen svg')).toHaveCount(1);
     expect(await page.evaluate(() => window.htmlAttack)).toBeUndefined();
+    expect(remote).toEqual([]);
   } finally { await context.close(); }
 });
 

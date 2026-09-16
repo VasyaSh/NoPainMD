@@ -4,6 +4,7 @@
 
 - Automatically render opening YAML front matter as preformatted text, preserving delimiters and indentation in either HTML mode.
 - Keep header content out of the document title, heading outline, and automatic links.
+- Replace the flagged HTML test regex with an exact escaped-output assertion and cover script-tag casing, attributes, and malformed closing tags in browser tests.
 
 ## 0.1.16
 

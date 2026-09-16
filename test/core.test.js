@@ -179,7 +179,8 @@ test('Markdown supports extras, literal Mermaid source, SVG markup, and safe lin
   assert.match(result.html, /href="sub\/guide%20%26%23.md#go"/);
   assert.match(result.html, /\/api\/image\?file=/);
   assert.match(result.html, /disabled/); assert.match(result.html, /<table>/);
-  assert.doesNotMatch(result.html, /<script>/); assert.match(result.html, /mermaid-source/);
+  assert.ok(result.html.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
+  assert.match(result.html, /mermaid-source/);
   for (const source of [
     '<img src="![nested](image.png)" alt="**bold**">',
     '<!-- ![hidden](image.png) -->',
